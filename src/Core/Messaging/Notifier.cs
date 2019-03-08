@@ -197,7 +197,7 @@ namespace Gibraltar.Messaging
         {
             try
             {
-                Publisher.ThreadMustNotNotify(); // Suppress notification about any messages issued on this thread so we don't loop!
+                PublisherSettings.ThreadMustNotNotify(); // Suppress notification about any messages issued on this thread so we don't loop!
 
                 while (true)
                 {

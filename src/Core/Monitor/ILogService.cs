@@ -1,248 +1,67 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Security.Claims;
-using System.Security.Principal;
 using System.Threading.Tasks;
 using Gibraltar.Data;
 using Gibraltar.Messaging;
-using Gibraltar.Monitor.Internal;
-using Gibraltar.Server.Client;
 using Loupe.Configuration;
 using Loupe.Extensibility.Data;
 
 namespace Gibraltar.Monitor
 {
-    /// <summary>
-    /// Handles interfacing with a single log file for the purpose of writing log messages.
-    /// </summary>
-    public static class Log
+    public interface ILogService
     {
-        static Log()
-        {
-            s_LogService = new LogService();
-        }
-        
-        internal static ILogService s_LogService;
-        
-        /// <summary>
-        /// The file extension (without period) for a Gibraltar Log File.  Used internally to Gibraltar.
-        /// </summary>
-        public const string LogExtension = FileMessenger.LogExtension;
-
-        /// <summary>
-        /// The file extension (without period) for a Gibraltar Package File.
-        /// </summary>
-        public const string PackageExtension = FileMessenger.PackageExtension;
-
-        /// <summary>
-        /// A standard file filter for standard file dialogs that allows selection of packages and logs.
-        /// </summary>
-        public const string FileFilter = "Package File(*." + PackageExtension + ")|*." + PackageExtension + "|Log File (*." + LogExtension + ")|*." + LogExtension + "|All Files (*.*)|*.*";
-
-        /// <summary>
-        /// A standard file filter for standard file dialogs that allows selection of logs.
-        /// </summary>
-        public const string FileFilterLogsOnly = "Log File (*." + LogExtension + ")|*." + LogExtension + "|All Files (*.*)|*.*";
-
-        /// <summary>
-        /// A standard file filter for standard file dialogs that allows selection of packages.
-        /// </summary>
-        public const string FileFilterPackagesOnly = "Package File(*." + PackageExtension + ")|*." + PackageExtension + "|All Files (*.*)|*.*";
-
-        /// <summary>
-        /// The log system name for Gibraltar
-        /// </summary>
-        public const string ThisLogSystem = "Gibraltar";
-
-        /// <summary>
-        /// The category for trace messages
-        /// </summary>
-        public const string Category = "Trace";
-
-        /// <summary>
-        /// The default category name, replacing a null or empty category.
-        /// </summary>
-        private const string GeneralCategory = "General";
-
-        /// <summary>
-        /// The default category name for a dedicated Exception message.
-        /// </summary>
-        public const string ExceptionCategory = "System.Exception";
-
-        /// <summary>
-        /// Handler for the Initialize event.
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        public delegate void InitializingEventHandler(object sender, LogInitializingEventArgs e);
-
-        /// <summary>
-        /// Raised whenever the log system is being started to enable programmatic configuration.
-        /// </summary>
-        /// <remarks>You can cancel initialization by setting the cancel property to true in the event arguments. 
-        /// If canceled, the log system will not record any information but allow all calls to be made.
-        /// Even if canceled it is possible for the logging system to attempt to reinitialize if a call 
-        /// is explicitly made to start a session.</remarks>
-        public static event InitializingEventHandler Initializing
-        {
-            add => s_LogService.Initializing += value;
-            remove => s_LogService.Initializing -= value;
-        }
-
-        #region Debugging assistance
-
-        /// <summary>
-        /// A temporary flag to tell us whether to invoke a Debugger.Break() when Log.DebugBreak() is called.
-        /// </summary>
-        /// <remarks>True enables breakpointing, false disables.  This should probably be replaced with an enum
-        /// to support multiple modes, assuming the basic usage works out.</remarks>
-        public static bool BreakPointEnable
-        {
-            get => s_LogService.BreakPointEnable;
-            set => s_LogService.BreakPointEnable = value;
-        }
-
-        /// <summary>
-        /// Automatically stop debugger like a breakpoint, if enabled.
-        /// </summary>
-        /// <remarks>This will check the state of Log.BreakPointEnable and whether a debugger is attached,
-        /// and will breakpoint only if both are true.  This should probably be extended to handle additional
-        /// configuration options using an enum, assuming the basic usage works out.  This method is conditional
-        /// upon a DEBUG build and will be safely ignored in release builds, so it is not necessary to wrap calls
-        /// to this method in #if DEBUG (acts much like Debug class methods).</remarks>
-        [Conditional("DEBUG")]
-        public static void DebugBreak() => s_LogService.DebugBreak();
-
-        #endregion
-
-        #region Public Properties and Methods
-
         /// <summary>
         /// Indicates if the logging system should be running in silent mode (for example when running in the agent).
         /// </summary>
         /// <remarks>Pass-through to the setting in CommonFileTools.</remarks>
-        public static bool SilentMode
-        {
-            get => s_LogService.SilentMode;
-            set => s_LogService.SilentMode = value;
-        }
+        bool SilentMode { get; set; }
 
         /// <summary>
         /// Indicates if the process is running under the Mono runtime or the full .NET CLR.
         /// </summary>
-        public static bool IsMonoRuntime => s_LogService.IsMonoRuntime;
-
-
-        /// <summary>
-        /// Indicates if logging is active, performing initialization if necessary
-        /// </summary>
-        /// <returns>True if logging is active, false if it isn't at this time.</returns>
-        /// <remarks>The very first time this is used it will attempt to start the logging system even if 
-        /// it hasn't already been started.  If that call is canceled through our Initializing event then 
-        /// it will return false.  After the first call it will indicate if logging is currently initialized
-        /// and not attempt to initialize.</remarks>
-        public static bool IsLoggingActive() => s_LogService.IsLoggingActive();
-
-        /// <summary>
-        /// Indicates if the log system has been initialized and is operational
-        /// </summary>
-        /// <remarks>Once true it will never go false, however if false it may go true at any time.</remarks>
-        internal static bool Initialized => s_LogService.Initialized;
-
-        /// <summary>
-        /// Attempt to initialize the log system.  If it is already initialized it will return immediately.
-        /// </summary>
-        /// <param name="configuration">Optional.  A default configuration to start with instead of the configuration file.</param>
-        /// <returns>True if the initialization has completed (on this call or prior),
-        /// false if a re-entrant call returns to avoid deadlocks and infinite recursion.</returns>
-        /// <remarks>If calling initialization from a path that may have started with the trace listener,
-        /// you must set suppressTraceInitialize to true to guarantee that the application will not deadlock
-        /// or throw an unexpected exception.</remarks>
-        public static bool Initialize(AgentConfiguration configuration) => s_LogService.Initialize(configuration);
+        bool IsMonoRuntime { get; }
 
         /// <summary>
         /// The running publisher configuration.  This is always safe even when logging is disabled.
         /// </summary>
-        public static AgentConfiguration Configuration => s_LogService.Configuration;
+        AgentConfiguration Configuration { get; }
 
         /// <summary>
         /// The common information about the active log session.  This is always safe even when logging is disabled.
         /// </summary>
-        public static SessionSummary SessionSummary => s_LogService.SessionSummary;
+        SessionSummary SessionSummary { get; }
 
         /// <summary>
         /// Get the official Error Alert Notifier instance.  Will create it if it doesn't already exist.
         /// </summary>
-        public static Notifier MessageAlertNotifier => s_LogService.MessageAlertNotifier;
+        Notifier MessageAlertNotifier { get; }
 
         /// <summary>
         /// Get the official Notifier instance that returns all messages.  Will create it if it doesn't already exist.
         /// </summary>
-        public static Notifier MessageNotifier => s_LogService.MessageNotifier;
+        Notifier MessageNotifier { get; }
 
         /// <summary>
         /// Get the official user resolution notifier instance.  Will create it if it doesn't already exist.
         /// </summary>
-        public static UserResolutionNotifier UserResolutionNotifier => s_LogService.UserResolutionNotifier;
+        UserResolutionNotifier UserResolutionNotifier { get; }
 
         /// <summary>
         /// The current process's collection repository
         /// </summary>
-        public static LocalRepository Repository => s_LogService.Repository;
-
-        /// <summary>
-        /// Indicates if we have sufficient configuration information to automatically send packages while running (via email or server).
-        /// </summary>
-        /// <remarks>This checks whether there is sufficient configuration to submit sessions using the current configuration.</remarks>
-        /// <returns></returns>
-        public static bool CanSendSessions(ref string message) => s_LogService.CanSendSessions(ref message);
-
-        /// <summary>
-        /// Indicates if we have sufficient configuration information to automatically send packages upon exit (via email or server).
-        /// </summary>
-        /// <remarks>This checks whether there is sufficient configuration to submit sessions through the packager upon exit.
-        /// It also checks that the packager executable can be found.</remarks>
-        /// <returns></returns>
-        public static bool CanSendSessionsOnExit(ref string message) => s_LogService.CanSendSessionsOnExit(ref message);
-
-        /// <summary>
-        /// Ensure all messages have been written completely
-        /// </summary>
-        public static void Flush() => s_LogService.Flush();
-
-        /// <summary>
-        /// Indicates if we have sufficient configuration information to automatically send packages by email submission.
-        /// </summary>
-        /// <returns></returns>
-        /// <remarks>Does not check if email submission is allowed</remarks>
-        public static bool IsEmailSubmissionConfigured(ref string message) => s_LogService.IsEmailSubmissionConfigured(ref message);
-
-        /// <summary>
-        /// Indicates if we have sufficient configuration information to automatically send packages to a Loupe Server.
-        /// </summary>
-        /// <remarks>This checks whether there is sufficient configuration to submit sessions through a server.
-        /// It does NOT check whether the packager is configured to allow submission through a server, because
-        /// they may also be sent directly from Agent without using the packager.</remarks>
-        /// <returns></returns>
-        public static bool IsHubSubmissionConfigured(ref string message) => s_LogService.IsHubSubmissionConfigured(ref message);
-
-        /// <summary>
-        /// Indicates if the packager executable is available where this process can find it.
-        /// </summary>
-        public static bool CanFindPackager(ref string message) => s_LogService.CanFindPackager(ref message);
+        LocalRepository Repository { get; }
 
         /// <summary>
         /// Indicates if the agent should package &amp; send sessions for the current application after this session exits.
         /// </summary>
         /// <remarks>When true the system will automatically </remarks>
-        public static bool SendSessionsOnExit
+        bool SendSessionsOnExit
         {
-            get => s_LogService.SendSessionsOnExit;
-            [MethodImplAttribute(MethodImplOptions.NoInlining)] // Does this work here? Is it needed?
-            set => s_LogService.SendSessionsOnExit = value;
+            get;
+            [MethodImpl(MethodImplOptions.NoInlining)] // Does this work here? Is it needed?
+            set;
         }
 
         /// <summary>
@@ -252,7 +71,7 @@ namespace Gibraltar.Monitor
         /// EndSession for easy Gibraltar drop-in support.  If StartSession was explicitly called then we expect
         /// the client to make a corresponding explicit EndSession call, and the Agent's ApplicationExit handler
         /// will not call EndSession.</remarks>
-        public static bool ExplicitStartSessionCalled => s_LogService.ExplicitStartSessionCalled;
+        bool ExplicitStartSessionCalled { get; }
 
         /// <summary>
         /// Our one metric definition collection for capturing metrics in this process
@@ -263,17 +82,102 @@ namespace Gibraltar.Monitor
         /// If there is a duplicate metric in the data stream, that information will be discarded when the log 
         /// file is read (but there is no effect at runtime).
         /// </remarks>
-        public static MetricDefinitionCollection Metrics => s_LogService.Metrics;
+        MetricDefinitionCollection Metrics { get; }
+
+        /// <summary>
+        /// The version information for the Gibraltar Agent.
+        /// </summary>
+        Version AgentVersion { get; }
+
+        /// <summary>
+        /// A temporary flag to tell us whether to invoke a Debugger.Break() when Log.DebugBreak() is called.
+        /// </summary>
+        /// <remarks>True enables breakpointing, false disables.  This should probably be replaced with an enum
+        /// to support multiple modes, assuming the basic usage works out.</remarks>
+        bool BreakPointEnable { get; set; }
+
+        /// <summary>
+        /// Indicates if the log system has been initialized and is operational
+        /// </summary>
+        /// <remarks>Once true it will never go false, however if false it may go true at any time.</remarks>
+        bool Initialized { get; }
 
         /// <summary>
         /// Reports whether EndSession() has been called to formally end the session.
         /// </summary>
-        public static bool IsSessionEnding => s_LogService.IsSessionEnding;
+        bool IsSessionEnding { get; }
 
         /// <summary>
         /// Reports whether EndSession() has completed flushing the end-session command to the log.
         /// </summary>
-        public static bool IsSessionEnded => s_LogService.IsSessionEnded;
+        bool IsSessionEnded { get; }
+
+        /// <summary>
+        /// Indicates if the calling thread is part of the log initialization process
+        /// </summary>
+        bool ThreadIsInitializer { get; set; }
+
+        /// <summary>
+        /// Indicates if logging is active, performing initialization if necessary
+        /// </summary>
+        /// <returns>True if logging is active, false if it isn't at this time.</returns>
+        /// <remarks>The very first time this is used it will attempt to start the logging system even if 
+        /// it hasn't already been started.  If that call is canceled through our Initializing event then 
+        /// it will return false.  After the first call it will indicate if logging is currently initialized
+        /// and not attempt to initialize.</remarks>
+        bool IsLoggingActive();
+
+        /// <summary>
+        /// Attempt to initialize the log system.  If it is already initialized it will return immediately.
+        /// </summary>
+        /// <param name="configuration">Optional.  A default configuration to start with instead of the configuration file.</param>
+        /// <returns>True if the initialization has completed (on this call or prior),
+        /// false if a re-entrant call returns to avoid deadlocks and infinite recursion.</returns>
+        /// <remarks>If calling initialization from a path that may have started with the trace listener,
+        /// you must set suppressTraceInitialize to true to guarantee that the application will not deadlock
+        /// or throw an unexpected exception.</remarks>
+        bool Initialize(AgentConfiguration configuration);
+
+        /// <summary>
+        /// Indicates if we have sufficient configuration information to automatically send packages while running (via email or server).
+        /// </summary>
+        /// <remarks>This checks whether there is sufficient configuration to submit sessions using the current configuration.</remarks>
+        /// <returns></returns>
+        bool CanSendSessions(ref string message);
+
+        /// <summary>
+        /// Indicates if we have sufficient configuration information to automatically send packages upon exit (via email or server).
+        /// </summary>
+        /// <remarks>This checks whether there is sufficient configuration to submit sessions through the packager upon exit.
+        /// It also checks that the packager executable can be found.</remarks>
+        /// <returns></returns>
+        bool CanSendSessionsOnExit(ref string message);
+
+        /// <summary>
+        /// Ensure all messages have been written completely
+        /// </summary>
+        void Flush();
+
+        /// <summary>
+        /// Indicates if we have sufficient configuration information to automatically send packages by email submission.
+        /// </summary>
+        /// <returns></returns>
+        /// <remarks>Does not check if email submission is allowed</remarks>
+        bool IsEmailSubmissionConfigured(ref string message);
+
+        /// <summary>
+        /// Indicates if we have sufficient configuration information to automatically send packages to a Loupe Server.
+        /// </summary>
+        /// <remarks>This checks whether there is sufficient configuration to submit sessions through a server.
+        /// It does NOT check whether the packager is configured to allow submission through a server, because
+        /// they may also be sent directly from Agent without using the packager.</remarks>
+        /// <returns></returns>
+        bool IsHubSubmissionConfigured(ref string message);
+
+        /// <summary>
+        /// Indicates if the packager executable is available where this process can find it.
+        /// </summary>
+        bool CanFindPackager(ref string message);
 
         /// <summary>
         /// Record the provided set of metric samples to the log.
@@ -281,7 +185,7 @@ namespace Gibraltar.Monitor
         /// <remarks>When sampling multiple metrics at the same time, it is faster to make a single write call
         /// than multiple calls.</remarks>
         /// <param name="samples">A list of metric samples to record.</param>
-        public static void Write(List<MetricSample> samples) => s_LogService.Write(samples);
+        void Write(List<MetricSample> samples);
 
         /// <summary>
         /// Record the provided metric sample to the log.
@@ -290,12 +194,7 @@ namespace Gibraltar.Monitor
         /// create log information instead of manually creating log packets and writing them here.  This functionality
         /// is primarily for internal support of the various log listeners that support third party log systems.</remarks>
         /// <param name="sample"></param>
-        public static void Write(MetricSample sample) => s_LogService.Write(sample);
-
-        /// <summary>
-        /// The version information for the Gibraltar Agent.
-        /// </summary>
-        public static Version AgentVersion => s_LogService.AgentVersion;
+        void Write(MetricSample sample);
 
         /// <summary>
         /// Write a trace message directly to the Gibraltar log.
@@ -308,8 +207,7 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A simple single-line message caption. (Will not be processed for formatting.)</param>
         /// <param name="description">Additional multi-line descriptive message (or may be null) which can be a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments referenced by the formatted description string (or no arguments to skip formatting).</param>
-        public static void Write(LogMessageSeverity severity, string category, string caption, string description, params object[] args) =>
-            s_LogService.Write(severity, category, caption, description, args);
+        void Write(LogMessageSeverity severity, string category, string caption, string description, params object[] args);
 
         /// <summary>
         /// Write a log message directly to the Gibraltar log with an attached Exception and specifying
@@ -328,10 +226,8 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A simple single-line message caption. (Will not be processed for formatting.)</param>
         /// <param name="description">Additional multi-line descriptive message (or may be null) which can be a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments referenced by the formatted description string (or no arguments to skip formatting).</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, string category, string caption,
-            string description, params object[] args) =>
-            s_LogService.Write(severity, writeMode, exception, category, caption, description, args);
+        void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, string category, string caption,
+            string description, params object[] args);
 
         /// <summary>
         /// Write a log message directly to the Gibraltar log with an attached Exception and specifying
@@ -351,10 +247,8 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A simple single-line message caption. (Will not be processed for formatting.)</param>
         /// <param name="description">Additional multi-line descriptive message (or may be null) which can be a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments referenced by the formatted description string (or no arguments to skip formatting).</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, int skipFrames, string category, string caption,
-            string description, params object[] args) =>
-            s_LogService.Write(severity, writeMode, exception, skipFrames, category, caption, description, args);
+        void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, int skipFrames, string category, string caption,
+            string description, params object[] args);
 
         /// <summary>
         /// Write a log message directly to the Gibraltar log with an attached Exception and specifying
@@ -374,11 +268,8 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A simple single-line message caption. (Will not be processed for formatting.)</param>
         /// <param name="description">Additional multi-line descriptive message (or may be null) which can be a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments referenced by the formatted description string (or no arguments to skip formatting).</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, bool attributeToException, string category,
-            string caption,
-            string description, params object[] args) =>
-            s_LogService.Write(severity, writeMode, exception, attributeToException, category, caption, description, args);
+        void Write(LogMessageSeverity severity, LogWriteMode writeMode, Exception exception, bool attributeToException, string category, string caption,
+            string description, params object[] args);
 
         /// <summary>
         /// Write a trace message directly to the Gibraltar log with an optional attached Exception and specifying
@@ -404,10 +295,8 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A single line display caption.</param>
         /// <param name="description">Optional.  A multi-line description to use which can be a format string for the arguments.  Can be null.</param>
         /// <param name="args">Optional.  A variable number of arguments to insert into the formatted description string.</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, int skipFrames, Exception exception,
-            string detailsXml, string caption, string description, params object[] args) =>
-            s_LogService.WriteMessage(severity, writeMode, skipFrames, exception, detailsXml, caption, description, args);
+        void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, int skipFrames, Exception exception,
+            string detailsXml, string caption, string description, params object[] args);
 
         /// <summary>
         /// Write a trace message directly to the Gibraltar log with an optional attached Exception and specifying
@@ -434,10 +323,8 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A single line display caption.</param>
         /// <param name="description">Optional.  A multi-line description to use which can be a format string for the arguments.  Can be null.</param>
         /// <param name="args">Optional.  A variable number of arguments to insert into the formatted description string.</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, int skipFrames, Exception exception, bool attributeToException,
-            string detailsXml, string caption, string description, params object[] args) =>
-            s_LogService.WriteMessage(severity, writeMode, skipFrames, exception, attributeToException, detailsXml, caption, description, args);
+        void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, int skipFrames, Exception exception, bool attributeToException,
+            string detailsXml, string caption, string description, params object[] args);
 
         /// <summary>
         /// Write a Verbose trace message directly to the Gibraltar log.
@@ -447,8 +334,7 @@ namespace Gibraltar.Monitor
         /// should instead use the Log.Write(...) overloads.</remarks>
         /// <param name="format">The string message to use, or a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments to insert into the formatted message string.</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void Trace(string format, params object[] args) => s_LogService.Trace(format, args);
+        void Trace(string format, params object[] args);
 
         /// <summary>
         /// Write a Verbose trace message directly to the Gibraltar log.
@@ -463,8 +349,7 @@ namespace Gibraltar.Monitor
         /// <param name="exception">An Exception object to attach to this log message.</param>
         /// <param name="format">The string message to use, or a format string followed by corresponding args.</param>
         /// <param name="args">A variable number of arguments to insert into the formatted message string.</param>
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public static void Trace(Exception exception, string format, params object[] args) => s_LogService.Trace(exception, format, args);
+        void Trace(Exception exception, string format, params object[] args);
 
         /// <summary>
         /// Record an unexpected Exception to the Gibraltar central log, formatted automatically.
@@ -484,10 +369,8 @@ namespace Gibraltar.Monitor
         /// <param name="category">The application subsystem or logging category that the message will be associated with.</param>
         /// <param name="canContinue">True if the application can continue after this call, false if this is a fatal error
         /// and the application can not continue after this call.</param>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void RecordException(int skipFrames, Exception exception, string detailsXml, string category,
-            bool canContinue) =>
-            s_LogService.RecordException(skipFrames, exception, detailsXml, category, canContinue);
+        void RecordException(int skipFrames, Exception exception, string detailsXml, string category,
+            bool canContinue);
 
         /// <summary>
         /// Record an unexpected Exception to the Gibraltar central log, formatted automatically.
@@ -508,9 +391,8 @@ namespace Gibraltar.Monitor
         /// <param name="category">The application subsystem or logging category that the message will be associated with.</param>
         /// <param name="canContinue">True if the application can continue after this call, false if this is a fatal error
         /// and the application can not continue after this call.</param>
-        public static void RecordException(IMessageSourceProvider sourceProvider, Exception exception, string detailsXml,
-            string category, bool canContinue) =>
-            s_LogService.RecordException(sourceProvider, exception, detailsXml, category, canContinue);
+        void RecordException(IMessageSourceProvider sourceProvider, Exception exception, string detailsXml,
+            string category, bool canContinue);
 
         /// <summary>
         /// Write a complete log message to the Gibraltar central log.
@@ -534,11 +416,9 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A single line display caption.</param>
         /// <param name="description">Optional.  A multi-line description to use which can be a format string for the arguments.  Can be null.</param>
         /// <param name="args">Optional.  A variable number of arguments to insert into the formatted description string.</param>
-        public static void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, string logSystem,
+        void WriteMessage(LogMessageSeverity severity, LogWriteMode writeMode, string logSystem,
             string categoryName, IMessageSourceProvider sourceProvider, string userName,
-            Exception exception, string detailsXml, string caption, string description, params object[] args) =>
-            s_LogService.WriteMessage(severity, writeMode, logSystem, categoryName, sourceProvider, userName, exception, detailsXml, caption, description,
-                args);
+            Exception exception, string detailsXml, string caption, string description, params object[] args);
 
         /// <summary>
         /// End the current log file (but not the session) and open a new file to continue logging.
@@ -547,8 +427,7 @@ namespace Gibraltar.Monitor
         /// (instead of waiting for an automatic maintenance roll-over) in order to allow the logs of
         /// an ongoing session up to that point to be collected and submitted (or opened in the viewer)
         /// for analysis without shutting down the subject application.</remarks>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void EndFile() => s_LogService.EndFile();
+        void EndFile();
 
         /// <summary>
         /// End the current log file (but not the session) and open a new file to continue logging.
@@ -558,8 +437,7 @@ namespace Gibraltar.Monitor
         /// an ongoing session up to that point to be collected and submitted (or opened in the viewer)
         /// for analysis without shutting down the subject application.</remarks>
         /// <param name="reason">An optionally-declared reason for invoking this operation (may be null or empty).</param>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void EndFile(string reason) => s_LogService.EndFile(reason);
+        void EndFile(string reason);
 
         /// <summary>
         /// End the current log file (but not the session) and open a new file to continue logging.
@@ -570,7 +448,7 @@ namespace Gibraltar.Monitor
         /// for analysis without shutting down the subject application.</remarks>
         /// <param name="skipFrames">The number of stack frames to skip out to find the original caller.</param>
         /// <param name="reason">An optionally-declared reason for invoking this operation (may be null or empty).</param>
-        public static void EndFile(int skipFrames, string reason) => s_LogService.EndFile(skipFrames, reason);
+        void EndFile(int skipFrames, string reason);
 
         /// <summary>
         /// Called at the end of the process execution cycle to indicate that the process shut down normally or explicitly crashed.
@@ -587,8 +465,7 @@ namespace Gibraltar.Monitor
         /// <param name="sourceProvider">An IMessageSourceProvider object which supplies the source information
         /// about this log message.</param>
         /// <param name="reason">A simple reason to declare why the application is ending as Normal or as Crashed, or may be null.</param>
-        public static void EndSession(SessionStatus endingStatus, IMessageSourceProvider sourceProvider, string reason) =>
-            s_LogService.EndSession(endingStatus, sourceProvider, reason);
+        void EndSession(SessionStatus endingStatus, IMessageSourceProvider sourceProvider, string reason);
 
         /// <summary>
         /// Called at the end of the process execution cycle to indicate that the process shut down normally or explicitly crashed.
@@ -604,9 +481,7 @@ namespace Gibraltar.Monitor
         /// or <see cref="SessionStatus.Crashed">Crashed</see>.</param>
         /// <param name="skipFrames">The number of stack frames to skip out to find the original caller.</param>
         /// <param name="reason">A simple reason to declare why the application is ending as Normal or as Crashed, or may be null.</param>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void EndSession(SessionStatus endingStatus, int skipFrames, string reason) =>
-            s_LogService.EndSession(endingStatus, skipFrames, reason);
+        void EndSession(SessionStatus endingStatus, int skipFrames, string reason);
 
         /// <summary>
         /// Called to activate the logging system.  If it is already active then this has no effect.
@@ -614,9 +489,7 @@ namespace Gibraltar.Monitor
         /// <param name="configuration">Optional.  An initial default configuration to use instead of the configuration file.</param>
         /// <param name="skipFrames"></param>
         /// <param name="reason"></param>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        public static void StartSession(AgentConfiguration configuration, int skipFrames, string reason) =>
-            s_LogService.StartSession(configuration, skipFrames, reason);
+        void StartSession(AgentConfiguration configuration, int skipFrames, string reason);
 
         /// <summary>
         /// Called to activate the logging system.  If it is already active then this has no effect.
@@ -624,8 +497,7 @@ namespace Gibraltar.Monitor
         /// <param name="configuration">Optional.  An initial default configuration to use instead of the configuration file.</param>
         /// <param name="sourceProvider"></param>
         /// <param name="reason"></param>
-        public static void StartSession(AgentConfiguration configuration, IMessageSourceProvider sourceProvider, string reason) =>
-            s_LogService.StartSession(configuration, sourceProvider, reason);
+        void StartSession(AgentConfiguration configuration, IMessageSourceProvider sourceProvider, string reason);
 
         /// <summary>
         /// Send sessions using packager
@@ -635,36 +507,13 @@ namespace Gibraltar.Monitor
         /// <param name="asyncSend"></param>
         /// <returns>True if the send was processed, false if it was not due to configuration or another active send</returns>
         /// <remarks>Either a criteria or sessionMatchPredicate must be provided</remarks>
-        public static Task<bool> SendSessions(SessionCriteria? criteria, Predicate<ISessionSummary> sessionMatchPredicate, bool asyncSend) =>
-            s_LogService.SendSessions(criteria, sessionMatchPredicate, asyncSend);
+        Task<bool> SendSessions(SessionCriteria? criteria, Predicate<ISessionSummary> sessionMatchPredicate, bool asyncSend);
 
         /// <summary>
         /// Set the SendSessionsOnExit setting.  (Should only be called through the SendSessionsOnExit property in Monitor.Log or Agent.Log.)
         /// </summary>
         /// <param name="value"></param>
-        public static void SetSendSessionsOnExit(bool value) => s_LogService.SetSendSessionsOnExit(value);
-        
-        #endregion
-
-        #region Internal Properties and Methods
-
-        /// <summary>
-        /// Publish the provided raw packet to the stream.
-        /// </summary>
-        /// <remarks>This functionality is primarily for internal support of the various log listeners that support
-        /// third party log systems.  This overload uses the default LogWriteMode.Queued.  To specify wait-for-commit
-        /// behavior, use the overload with a LogWriteMode argument.</remarks>
-        /// <param name="packet">The log packet to write</param>
-        internal static void Write(IMessengerPacket packet) => s_LogService.Write(packet);
-
-        /// <summary>
-        /// Publish a batch of raw packets to the stream, specifying the LogWriteMode to use.
-        /// </summary>
-        /// <remarks>This functionality is primarily for internal support of the various log listeners that support
-        /// third party log systems.</remarks>
-        /// <param name="packetArray">An array of the log packets to write.</param>
-        /// <param name="writeMode">Whether to queue-and-return or wait-for-commit.</param>
-        internal static void Write(IMessengerPacket[] packetArray, LogWriteMode writeMode) => s_LogService.Write(packetArray, writeMode);
+        void SetSendSessionsOnExit(bool value);
 
         /// <summary>
         /// Create a complete log message WITHOUT sending it to the Gibraltar central log.
@@ -686,21 +535,35 @@ namespace Gibraltar.Monitor
         /// <param name="caption">A single line display caption.</param>
         /// <param name="description">Optional.  A multi-line description to use which can be a format string for the arguments.  Can be null.</param>
         /// <param name="args">A variable number of arguments to insert into the formatted description string.</param>
-        internal static IMessengerPacket MakeLogPacket(LogMessageSeverity severity, string logSystem, string category,
+        IMessengerPacket MakeLogPacket(LogMessageSeverity severity, string logSystem, string category,
             IMessageSourceProvider sourceProvider, string userName, Exception exception,
-            string detailsXml, string caption, string description, params object[] args) =>
-            s_LogService.MakeLogPacket(severity, logSystem, category, sourceProvider, userName, exception, detailsXml, caption, description, args);
+            string detailsXml, string caption, string description, params object[] args);
 
         /// <summary>
-        /// Indicates if the calling thread is part of the log initialization process
+        /// Publish the provided raw packet to the stream.
         /// </summary>
-        public static bool ThreadIsInitializer
-        {
-            get => s_LogService.ThreadIsInitializer;
-            set => s_LogService.ThreadIsInitializer = value;
-        }
+        /// <remarks>This functionality is primarily for internal support of the various log listeners that support
+        /// third party log systems.  This overload uses the default LogWriteMode.Queued.  To specify wait-for-commit
+        /// behavior, use the overload with a LogWriteMode argument.</remarks>
+        /// <param name="packet">The log packet to write</param>
+        void Write(IMessengerPacket packet);
 
-        #endregion
+        /// <summary>
+        /// Publish a batch of raw packets to the stream, specifying the LogWriteMode to use.
+        /// </summary>
+        /// <remarks>This functionality is primarily for internal support of the various log listeners that support
+        /// third party log systems.</remarks>
+        /// <param name="packetArray">An array of the log packets to write.</param>
+        /// <param name="writeMode">Whether to queue-and-return or wait-for-commit.</param>
+        void Write(IMessengerPacket[] packetArray, LogWriteMode writeMode);
 
+        /// <summary>
+        /// Raised whenever the log system is being started to enable programmatic configuration.
+        /// </summary>
+        /// <remarks>You can cancel initialization by setting the cancel property to true in the event arguments. 
+        /// If canceled, the log system will not record any information but allow all calls to be made.
+        /// Even if canceled it is possible for the logging system to attempt to reinitialize if a call 
+        /// is explicitly made to start a session.</remarks>
+        event Log.InitializingEventHandler Initializing;
     }
 }

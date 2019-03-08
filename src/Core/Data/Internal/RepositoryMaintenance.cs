@@ -12,7 +12,7 @@ namespace Gibraltar.Data.Internal
     /// <summary>
     /// Performs repository level maintenance such as purging for size.  Should be used with collection repositories only.
     /// </summary>
-    public class RepositoryMaintenance: IDisposable
+    public class RepositoryMaintenance : IDisposable
     {
         /// <summary>
         /// The name of the repository lock used to serialize repository maintenance.
@@ -281,7 +281,7 @@ namespace Gibraltar.Data.Internal
             try
             {
                 //make sure if we log something it never blocks, since that could ultimately result in a deadlock.
-                Publisher.ThreadMustNotBlock();
+                PublisherSettings.ThreadMustNotBlock();
 
                 bool collectionChanged = false;
 

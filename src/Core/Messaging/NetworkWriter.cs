@@ -158,7 +158,7 @@ namespace Gibraltar.Messaging
         protected override bool Connect()
         {
             //because we're used inside of the writing side of a messenger we have to be sure our thread doesn't block.
-            Publisher.ThreadMustNotBlock();
+            PublisherSettings.ThreadMustNotBlock();
 
             bool connnected = false;
 

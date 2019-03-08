@@ -38,7 +38,7 @@ namespace Gibraltar.Monitor.Internal
         {
             //we aren't a cachable packet so we have our own GUID
             Id = Guid.NewGuid();
-            m_SuppressNotification = Gibraltar.Messaging.Publisher.QueryThreadMustNotNotify();
+            m_SuppressNotification = Gibraltar.Messaging.PublisherSettings.QueryThreadMustNotNotify();
         }
 
         internal LogMessagePacket(ISessionPacketCache sessionPacketCache)

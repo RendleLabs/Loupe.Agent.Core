@@ -7,6 +7,7 @@ namespace Loupe.Agent.EntityFrameworkCore
 {
     public static class LoupeAgentBuilderExtensions
     {
-        public static ILoupeAgentBuilder AddEntityFrameworkCoreDiagnostics(this ILoupeAgentBuilder builder) => builder.AddListener<EntityFrameworkCoreDiagnosticListener>();
+        public static ILoupeAgentBuilder AddEntityFrameworkCoreDiagnostics(this ILoupeAgentBuilder builder)
+        => builder.AddListener<EntityFrameworkCoreDiagnosticListener>();
     }
 }

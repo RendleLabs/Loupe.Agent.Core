@@ -10,6 +10,53 @@ using Loupe.Extensibility.Data;
 
 namespace Gibraltar.Messaging
 {
+    internal static class PublisherSettings
+    {
+        // A thread-specific static flag for each thread, so we can disable blocking for Publisher and Messenger threads
+        internal static readonly ThreadLocal<bool> t_ThreadMustNotBlock = new ThreadLocal<bool>(); // false by default for each thread
+        // A thread-specific static flag for each thread, so we can disable notification loops for Notifier threads
+        internal static readonly ThreadLocal<bool> t_ThreadMustNotNotify = new ThreadLocal<bool>(); // false by default for each thread
+        
+        /// <summary>
+        /// Permanently disable blocking when queuing messages from this thread.
+        /// </summary>
+        /// <remarks>This allows threads to switch on their thread-specific blocking-disabled flag for our queue, to
+        /// guard against deadlocks in threads which are responsible for consuming and processing items from our queue.
+        /// WARNING: This setting can not be reversed.</remarks>
+        internal static void ThreadMustNotBlock()
+        {
+            t_ThreadMustNotBlock.Value = true;
+        }
+
+        /// <summary>
+        /// Query whether waiting on our queue items has been permanently disabled for the current thread.
+        /// </summary>
+        /// <returns>This returns the thread-specific blocking-disabled flag.  This flag is false by default
+        /// for each thread, unless Log.ThisThreadCannotLog() is called to set it to true.</returns>
+        internal static bool QueryThreadMustNotBlock()
+        {
+            return t_ThreadMustNotBlock.Value = true;
+        }
+
+        /// <summary>
+        /// Permanently disable notification for messages issued from this thread.
+        /// </summary>
+        /// <remarks>This allows threads to switch on their thread-specific notification-disabled flag for our queue,
+        /// to guard against indefinite loops in threads which are responsible for issuing notification events.
+        /// WARNING: This setting can not be reversed.</remarks>
+        internal static void ThreadMustNotNotify()
+        {
+            t_ThreadMustNotNotify.Value = true;
+        }
+
+        /// <summary>
+        /// Query whether notification alerts have been permanently disabled for messages issued by the current thread.
+        /// </summary>
+        /// <returns>This returns the thread-specific notification-disabled flag.  This flag is false by default
+        /// for each thread, unless Log.ThisThreadCannotNotify() is called to set it to true.</returns>
+        internal static bool QueryThreadMustNotNotify() => t_ThreadMustNotNotify.Value;
+    }
+    
     /// <summary>
     /// The central publisher for messaging
     /// </summary>
@@ -41,10 +88,6 @@ namespace Gibraltar.Messaging
         private long m_PacketSequence; //a monotonically increasing sequence number for packets as they get queued. LOCKED BY QUEUELOCK
         private bool m_Disposed;
 
-        // A thread-specific static flag for each thread, so we can disable blocking for Publisher and Messenger threads
-        [ThreadStatic] private static bool t_ThreadMustNotBlock; // false by default for each thread
-        // A thread-specific static flag for each thread, so we can disable notification loops for Notifier threads
-        [ThreadStatic] private static bool t_ThreadMustNotNotify; // false by default for each thread
 
         internal static event PacketEventHandler MessageDispatching;
 
@@ -93,48 +136,6 @@ namespace Gibraltar.Messaging
 
         #region Internal Properties and Methods
 
-        /// <summary>
-        /// Permanently disable blocking when queuing messages from this thread.
-        /// </summary>
-        /// <remarks>This allows threads to switch on their thread-specific blocking-disabled flag for our queue, to
-        /// guard against deadlocks in threads which are responsible for consuming and processing items from our queue.
-        /// WARNING: This setting can not be reversed.</remarks>
-        internal static void ThreadMustNotBlock()
-        {
-            t_ThreadMustNotBlock = true;
-        }
-
-        /// <summary>
-        /// Query whether waiting on our queue items has been permanently disabled for the current thread.
-        /// </summary>
-        /// <returns>This returns the thread-specific blocking-disabled flag.  This flag is false by default
-        /// for each thread, unless Log.ThisThreadCannotLog() is called to set it to true.</returns>
-        internal static bool QueryThreadMustNotBlock()
-        {
-            return t_ThreadMustNotBlock;
-        }
-
-        /// <summary>
-        /// Permanently disable notification for messages issued from this thread.
-        /// </summary>
-        /// <remarks>This allows threads to switch on their thread-specific notification-disabled flag for our queue,
-        /// to guard against indefinite loops in threads which are responsible for issuing notification events.
-        /// WARNING: This setting can not be reversed.</remarks>
-        internal static void ThreadMustNotNotify()
-        {
-            t_ThreadMustNotNotify = true;
-        }
-
-        /// <summary>
-        /// Query whether notification alerts have been permanently disabled for messages issued by the current thread.
-        /// </summary>
-        /// <returns>This returns the thread-specific notification-disabled flag.  This flag is false by default
-        /// for each thread, unless Log.ThisThreadCannotNotify() is called to set it to true.</returns>
-        internal static bool QueryThreadMustNotNotify()
-        {
-            return t_ThreadMustNotNotify;
-        }
-
 
         #endregion
 
@@ -170,7 +171,7 @@ namespace Gibraltar.Messaging
             {
                 // Before initialization... We must never allow this thread (which processes the queue!) to block
                 // when adding items to our queue, or we would deadlock.  (Does not need the lock to set this.)
-                ThreadMustNotBlock();
+                PublisherSettings.ThreadMustNotBlock();
 
                 bool backgroundThread;
 
@@ -515,7 +516,7 @@ namespace Gibraltar.Messaging
                 // We are currently using the overflow queue, so we'll put it there.
                 // However, if we were called by a must-not-block thread, we want to discard overflow packets...
                 // unless it's a command packet, which is too important to discard (it just won't wait on pending).
-                if (t_ThreadMustNotBlock && !packetEnvelope.IsCommand)
+                if (PublisherSettings.t_ThreadMustNotBlock.Value && !packetEnvelope.IsCommand)
                 {
                     packetEnvelope = null; // We won't queue this packet, so there's no envelope to hang onto.
                 }
@@ -779,7 +780,7 @@ namespace Gibraltar.Messaging
                     }
                 }
 
-                if (effectiveWriteThrough && t_ThreadMustNotBlock == false && queuedCount > 0 &&
+                if (effectiveWriteThrough && PublisherSettings.t_ThreadMustNotBlock.Value == false && queuedCount > 0 &&
                     (lastPacketEnvelope == null || ReferenceEquals(lastPacketEnvelope.Packet, packetArray[lastIndex]) == false))
                 {
                     // The expected WriteThrough packet got dropped because of overflow?  But we still need to block until
@@ -802,7 +803,7 @@ namespace Gibraltar.Messaging
             // so we don't need to hold up other threads that are publishing.
             EnsureMessageDispatchThreadIsValid();
 
-            if (lastPacketEnvelope == null || t_ThreadMustNotBlock)
+            if (lastPacketEnvelope == null || PublisherSettings.t_ThreadMustNotBlock.Value)
             {
                 // If we had no actual packets queued (e.g. shutdown, or no packets to queue), there's nothing to wait on.
                 // Also, special case for must-not-block threads.  Once it's on the queue (or not), don't wait further.

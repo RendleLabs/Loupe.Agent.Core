@@ -92,7 +92,7 @@ namespace Gibraltar.Messaging
             {
                 // Before initialization... We must never allow this thread (which processes the queue!) to block
                 // when adding items to our queue, or we would deadlock.  (Does not need the lock to set this.)
-                Publisher.ThreadMustNotBlock();
+                PublisherSettings.ThreadMustNotBlock();
 
                 // Now we need to make sure we're initialized.
                 lock (m_MessageDispatchThreadLock)
